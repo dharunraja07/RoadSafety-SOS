@@ -114,3 +114,21 @@ export function getCurrentPosition() {
     )
   })
 }
+
+export async function getIpLocation() {
+  try {
+    const res = await fetch('https://ipapi.co/json/')
+    if (!res.ok) {
+      throw new Error('IP location lookup failed')
+    }
+    const data = await res.json()
+    const lat = Number(data.latitude)
+    const lng = Number(data.longitude)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error('Invalid IP location coordinates')
+    }
+    return { lat, lng }
+  } catch {
+    return null
+  }
+}

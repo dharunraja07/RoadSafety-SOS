@@ -4,6 +4,7 @@ import {
   getGeolocationErrorMessage,
   geoOptions,
   queryGeolocationPermission,
+  getIpLocation,
 } from '../lib/geo'
 
 const LocationContext = createContext(null)
@@ -18,13 +19,24 @@ export function LocationProvider({ children }) {
   const [permissionDeclined, setPermissionDeclined] = useState(false)
   const [permissionChecked, setPermissionChecked] = useState(false)
 
-  const requestGps = useCallback(() => {
+  const requestGps = useCallback(async () => {
     setLoadingGps(true)
     setGpsError(false)
     setGpsErrorMessage('')
     setPermissionDeclined(false)
 
     if (!navigator.geolocation) {
+      const fallback = await getIpLocation()
+      if (fallback) {
+        setCoords(fallback)
+        setGpsError(false)
+        setGpsErrorMessage('Using approximate location from network/IP lookup')
+        setAddress('Approximate location detected')
+        setPermissionStatus('prompt')
+        setLoadingGps(false)
+        return Promise.resolve(fallback)
+      }
+
       const message = getGeolocationErrorMessage({ message: 'Geolocation not supported' })
       setGpsError(true)
       setGpsErrorMessage(message)
@@ -49,15 +61,27 @@ export function LocationProvider({ children }) {
           setAddress(geo || 'Live GPS Location Confirmed')
           resolve(live)
         },
-        (err) => {
+        async (err) => {
+          if (err?.code === 1) {
+            setPermissionStatus('denied')
+          }
+
+          const fallback = await getIpLocation()
+          if (fallback) {
+            setCoords(fallback)
+            setGpsError(false)
+            setGpsErrorMessage('Using approximate location from network/IP lookup')
+            setAddress('Approximate location detected')
+            setLoadingGps(false)
+            resolve(fallback)
+            return
+          }
+
           setGpsError(true)
           setGpsErrorMessage(getGeolocationErrorMessage(err))
           setCoords(null)
           setAddress('')
           setLoadingGps(false)
-          if (err?.code === 1) {
-            setPermissionStatus('denied')
-          }
           resolve(null)
         },
         geoOptions,
