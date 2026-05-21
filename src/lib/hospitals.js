@@ -103,33 +103,53 @@ export function parseOverpassElements(elements, userLat, userLng) {
     })
 }
 
-async function executeOverpassQuery(query) {
-  const res = await fetch('/api/overpass', {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: query,
-  })
+async function executeOverpassQuery(lat, lng, radius) {
+  try {
+    const params = new URLSearchParams({ lat, lng, radius })
+    const url = `/api/overpass?${params.toString()}`
 
-  if (!res.ok) {
-    throw new Error(`Overpass proxy failed: ${res.status}`)
+    console.log(`[hospitals] Fetching from proxy: ${url}`)
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+
+    if (!res.ok) {
+      console.error(`[hospitals] Proxy returned ${res.status}: ${res.statusText}`)
+      let errMsg = `Fetch failed: Server returned status ${res.status}`
+      try {
+        const errorJson = await res.json()
+        if (errorJson && errorJson.error) {
+          errMsg = errorJson.error
+        }
+      } catch (parseErr) {
+        // ignore JSON parsing issues if response is not JSON
+      }
+      throw new Error(errMsg)
+    }
+
+    const data = await res.json()
+    if (!data || !Array.isArray(data.elements)) {
+      console.error('[hospitals] Invalid response structure from proxy:', data)
+      throw new Error('Invalid response structure received from server')
+    }
+    console.log(`[hospitals] Proxy returned ${data.elements.length} elements`)
+    return data
+  } catch (err) {
+    console.error('[hospitals] Proxy error:', err && err.message)
+    throw err
   }
-
-  return await res.json()
 }
 
 export async function fetchHospitalsNearby(lat, lng, radius = 10000) {
   try {
-    const query = `[out:json][timeout:25];
-(
-  node["amenity"="hospital"](around:${radius},${lat},${lng});
-  way["amenity"="hospital"](around:${radius},${lat},${lng});
-  relation["amenity"="hospital"](around:${radius},${lat},${lng});
-);
-out center;`
-
-    const data = await executeOverpassQuery(query)
-    return parseOverpassElements(data.elements, lat, lng)
-  } catch {
-    return []
+    const data = await executeOverpassQuery(lat, lng, radius)
+    const results = parseOverpassElements(data.elements, lat, lng)
+    console.log(`[hospitals] Parsed ${results.length} hospitals`)
+    return results
+  } catch (err) {
+    console.error('[hospitals] Fetch failed, propagating error:', err && err.message)
+    throw err
   }
 }

@@ -52,6 +52,7 @@ export default function EmergencyHub() {
   const [hospitals, setHospitals] = useState([])
 
   const [loadingHospitals, setLoadingHospitals] = useState(false)
+  const [hospitalError, setHospitalError] = useState(null)
 
   const [crashOpen, setCrashOpen] = useState(false)
 
@@ -62,17 +63,17 @@ export default function EmergencyHub() {
   const fetchNearbyHospitals = useCallback(async (lat, lng, searchRadius = 5000) => {
 
     setLoadingHospitals(true)
+    setHospitalError(null)
 
     try {
 
       const data = await fetchHospitalsNearby(lat, lng, searchRadius)
       setHospitals(data)
 
-
-
-    } catch {
+    } catch (err) {
 
       setHospitals([])
+      setHospitalError(err.message || 'Failed to fetch nearby hospitals')
 
     } finally {
 
@@ -88,6 +89,7 @@ export default function EmergencyHub() {
     const nextRadius = Number(event.target.value)
     setRadius(nextRadius)
     setHospitals([])
+    setHospitalError(null)
   }
 
 
@@ -96,6 +98,7 @@ export default function EmergencyHub() {
     if (coords?.lat == null || coords?.lng == null) {
 
       setHospitals([])
+      setHospitalError(null)
       setLoadingHospitals(false)
       return
 
@@ -137,6 +140,36 @@ export default function EmergencyHub() {
 
   const lngDisplay =
     coords?.lng != null ? coords.lng.toFixed(6) : loadingGps ? '…' : awaitingGps ? 'Awaiting GPS' : '—'
+
+  const renderEmergencyNumbers = (
+    <div className="mt-4 space-y-2">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3">
+        <p className="font-semibold text-white">Ambulance Dispatch</p>
+        <a
+          href="tel:108"
+          className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white transition hover:bg-red-600"
+        >
+          108
+        </a>
+      </div>
+      {EMERGENCY_HELPLINES.filter((line) => line.id !== 'helpline-108')
+        .slice(0, 2)
+        .map((line) => (
+          <div
+            key={line.id}
+            className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3"
+          >
+            <p className="font-semibold text-white">{line.name}</p>
+            <a
+              href={line.telHref}
+              className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white transition hover:bg-red-600"
+            >
+              {line.phone}
+            </a>
+          </div>
+        ))}
+    </div>
+  )
 
 
 
@@ -367,187 +400,113 @@ export default function EmergencyHub() {
           </label>
         </div>
 
-        {
-          !coords && !loadingHospitals && (
+        {/* Case 1: Loading Hospitals */}
+        {loadingHospitals && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+              Scanning nearby hospitals…
+            </p>
+            <SkeletonLoader lines={3} pulsing />
+          </div>
+        )}
 
-            <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
+        {/* Case 2: No Coordinates / GPS Denied (Not loading) */}
+        {!coords && !loadingHospitals && (
+          <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
+            <p className="text-sm leading-relaxed text-slate-300 font-semibold">
+              {gpsError 
+                ? `GPS access denied or coordinates unavailable: ${gpsErrorMessage || 'Permission denied'}` 
+                : `Enable GPS to scan top-rated hospitals within ${radius / 1000} km.`
+              }
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              In case of an emergency, please use one of the helpline numbers below:
+            </p>
+            {renderEmergencyNumbers}
+          </div>
+        )}
 
-              <p className="text-sm leading-relaxed text-slate-300">
-
-                Enable GPS to scan top-rated hospitals within {radius / 1000} km.
-
+        {/* Case 3: Hospital Fetch Error (Not loading) */}
+        {coords && !loadingHospitals && hospitalError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm leading-relaxed text-red-400 font-semibold">
+                Failed to scan nearby hospitals: {hospitalError}
               </p>
-
-            </div>
-
-          )
-        }
-
-
-
-        {
-          loadingHospitals && (
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-
-              <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">
-
-                Scanning nearby hospitals…
-
+              <p className="text-xs text-slate-400">
+                All Overpass API mirrors returned errors or timed out.
               </p>
-
-              <SkeletonLoader lines={3} pulsing />
-
-            </div>
-
-          )
-        }
-
-
-
-        {
-          coords && !loadingHospitals && traumaCenters.length === 0 && (
-
-            <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
-
-              <p className="text-sm leading-relaxed text-slate-300">
-
-                No hospitals found within {radius / 1000} km. Call ambulance dispatch on 108 now, or use one of the emergency lines below.
-
-              </p>
-
-              <div className="mt-4 space-y-2">
-
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3">
-
-                  <p className="font-semibold text-white">Ambulance Dispatch</p>
-
-                  <a
-
-                    href="tel:108"
-
-                    className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white"
-
-                  >
-
-                    108
-
-                  </a>
-
-                </div>
-
-                {EMERGENCY_HELPLINES.filter((line) => line.id !== 'helpline-108').slice(0, 2).map((line) => (
-
-                  <div
-
-                    key={line.id}
-
-                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3"
-
-                  >
-
-                    <p className="font-semibold text-white">{line.name}</p>
-
-                    <a
-
-                      href={line.telHref}
-
-                      className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white"
-
-                    >
-
-                      {line.phone}
-
-                    </a>
-
-                  </div>
-
-                ))}
-
-              </div>
-
-            </div>
-
-          )
-        }
-
-
-
-        {
-          coords && !loadingHospitals && (
-
-            <div className="space-y-3">
-
-              {traumaCenters.map((hospital) => (
-
-                <div
-
-                  key={hospital.id}
-
-                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition hover:border-slate-700"
-
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fetchNearbyHospitals(coords.lat, coords.lng, radius)}
+                  className="mt-1 flex items-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white transition border border-slate-700"
                 >
-
-                  <div className="flex items-start justify-between gap-3">
-
-                    <div className="min-w-0 flex-1">
-
-                      <div className="flex flex-wrap items-center gap-2">
-
-                        <h4 className="font-bold text-white">{hospital.name}</h4>
-
-                        {hospital.isPriority && (
-                          <span className="rounded-full bg-traffic-red/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-traffic-red">
-                            ⭐ Critical/Speciality Facility
-                          </span>
-                        )}
-
-                        <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300">
-
-                          {hospital.ratingDisplay}
-
-                        </span>
-
-                      </div>
-
-                      <p className="mt-2 text-sm">
-
-                        <span className="font-mono text-warning-amber">{hospital.distance}</span>
-
-                        <span className="text-slate-500"> away</span>
-
-                      </p>
-
-                    </div>
-
-                    <a
-
-                      href={`https://www.google.com/maps/search/?api=1&query=${hospital.lat},${hospital.lng}`}
-
-                      target="_blank"
-
-                      rel="noopener noreferrer"
-
-                      className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-emerald-500"
-
-                    >
-
-                      <Navigation className="h-4 w-4" />
-
-                      Navigate
-
-                    </a>
-
-                  </div>
-
-                </div>
-
-              ))}
-
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Retry Scan
+                </button>
+              </div>
             </div>
+            <p className="mt-4 text-xs text-slate-400">
+              Emergency dispatcher helpline numbers:
+            </p>
+            {renderEmergencyNumbers}
+          </div>
+        )}
 
-          )
-        }
+        {/* Case 4: Success, but 0 hospitals found (Not loading, no error) */}
+        {coords && !loadingHospitals && !hospitalError && traumaCenters.length === 0 && (
+          <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
+            <p className="text-sm leading-relaxed text-slate-300 font-semibold">
+              No hospitals found within {radius / 1000} km.
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              Call ambulance dispatch on 108 now, or use one of the emergency lines below:
+            </p>
+            {renderEmergencyNumbers}
+          </div>
+        )}
+
+        {/* Case 5: Success with hospitals (Not loading, no error, has elements) */}
+        {coords && !loadingHospitals && !hospitalError && traumaCenters.length > 0 && (
+          <div className="space-y-3">
+            {traumaCenters.map((hospital) => (
+              <div
+                key={hospital.id}
+                className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition hover:border-slate-700"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-bold text-white">{hospital.name}</h4>
+                      {hospital.isPriority && (
+                        <span className="rounded-full bg-traffic-red/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-traffic-red">
+                          ⭐ Critical/Speciality Facility
+                        </span>
+                      )}
+                      <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300">
+                        {hospital.ratingDisplay}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm">
+                      <span className="font-mono text-warning-amber">{hospital.distance}</span>
+                      <span className="text-slate-500"> away</span>
+                    </p>
+                  </div>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${hospital.lat},${hospital.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-emerald-500"
+                  >
+                    <Navigation className="h-4 w-4" />
+                    Navigate
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
       </div >
 
