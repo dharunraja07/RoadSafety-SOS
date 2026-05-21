@@ -1,8 +1,55 @@
+import https from 'https'
+import { URL } from 'url'
+
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ]
+
+function makeRequest(url, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url)
+    const options = {
+      method: 'POST',
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      headers: {
+        'Content-Type': 'text/plain',
+        Accept: 'application/json',
+        'User-Agent': 'RoadSoS/1.0 (+https://github.com/dharunraja07/RoadSafety-SOS)',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: timeoutMs,
+    }
+
+    const req = https.request(options, (res) => {
+      let data = ''
+      res.on('data', (chunk) => {
+        data += chunk
+      })
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          body: data,
+        })
+      })
+    })
+
+    req.on('error', (err) => {
+      reject(err)
+    })
+
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('Timeout'))
+    })
+
+    req.write(body)
+    req.end()
+  })
+}
 
 export default async function handler(req, res) {
   const startTime = Date.now()
@@ -76,33 +123,18 @@ out center;`
       console.log(`[overpass-proxy] Mirror ${i + 1}/${OVERPASS_MIRRORS.length}: ${url} (Timeout: ${currentTimeout}ms)`)
 
       try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), currentTimeout)
+        const response = await makeRequest(url, query, currentTimeout)
 
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain',
-            Accept: 'application/json',
-            'User-Agent': 'RoadSoS/1.0 (+https://github.com/dharunraja07/RoadSafety-SOS)',
-          },
-          body: query,
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeoutId)
-
-        if (!r.ok) {
-          console.error(`[overpass-proxy] Mirror ${url} failed with status ${r.status} ${r.statusText}`)
+        if (response.statusCode !== 200) {
+          console.error(`[overpass-proxy] Mirror ${url} failed with status ${response.statusCode} ${response.statusMessage}`)
           continue
         }
 
-        const text = await r.text()
-        console.log(`[overpass-proxy] Mirror ${url} succeeded, response length: ${text.length}`)
+        console.log(`[overpass-proxy] Mirror ${url} succeeded, response length: ${response.body.length}`)
 
         // Validate it's valid JSON and contains elements
         try {
-          const parsed = JSON.parse(text)
+          const parsed = JSON.parse(response.body)
           if (!parsed || !Array.isArray(parsed.elements)) {
             console.error(`[overpass-proxy] Mirror ${url} returned response without elements array`)
             continue
@@ -113,12 +145,11 @@ out center;`
         }
 
         res.statusCode = 200
-        res.end(text)
+        res.end(response.body)
         return
       } catch (e) {
         const errMsg = e && e.message ? e.message : String(e)
-        const isAbort = e && e.name === 'AbortError'
-        console.error(`[overpass-proxy] Mirror ${url} error: ${isAbort ? 'Timeout / Aborted' : errMsg}`)
+        console.error(`[overpass-proxy] Mirror ${url} error: ${errMsg}`)
         if (i < OVERPASS_MIRRORS.length - 1) {
           console.log(`[overpass-proxy] Retrying next mirror...`)
         }
