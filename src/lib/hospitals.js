@@ -1,11 +1,5 @@
 import { haversineKm } from './geo'
 
-const OVERPASS_URLS = [
-  'https://overpass.openstreetmap.fr/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-]
-
 export const EMERGENCY_HELPLINES = [
   { id: 'helpline-911', name: 'United States Emergency', phone: '911', telHref: 'tel:911' },
   { id: 'helpline-112', name: 'Europe / International', phone: '112', telHref: 'tel:112' },
@@ -110,28 +104,17 @@ export function parseOverpassElements(elements, userLat, userLng) {
 }
 
 async function executeOverpassQuery(query) {
-  for (const url of OVERPASS_URLS) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain',
-          Accept: 'application/json',
-        },
-        body: query,
-      })
+  const res = await fetch('/api/overpass', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: query,
+  })
 
-      if (!res.ok) {
-        continue
-      }
-
-      return await res.json()
-    } catch {
-      continue
-    }
+  if (!res.ok) {
+    throw new Error(`Overpass proxy failed: ${res.status}`)
   }
 
-  throw new Error('All Overpass mirrors failed')
+  return await res.json()
 }
 
 export async function fetchHospitalsNearby(lat, lng, radius = 10000) {
