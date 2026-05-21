@@ -52,10 +52,28 @@ export function parseOverpassElements(elements, userLat, userLng) {
   if (!Array.isArray(elements)) return []
 
   return elements
-    .filter((el) => el.type === 'node' && el.lat != null && el.lon != null)
     .map((el) => {
       const tags = el.tags || {}
-      const km = haversineKm(userLat, userLng, el.lat, el.lon)
+      let lat = null
+      let lon = null
+
+      if (el.type === 'node' && el.lat != null && el.lon != null) {
+        lat = el.lat
+        lon = el.lon
+      } else if (
+        (el.type === 'way' || el.type === 'relation') &&
+        el.center?.lat != null &&
+        el.center?.lon != null
+      ) {
+        lat = el.center.lat
+        lon = el.center.lon
+      }
+
+      if (lat == null || lon == null) {
+        return null
+      }
+
+      const km = haversineKm(userLat, userLng, lat, lon)
       const rating = parseRating(tags.rating ?? tags.stars)
       const name = tags.name || 'Unnamed Emergency Facility'
       const priority = isPriorityHospital(name, tags)
@@ -63,16 +81,17 @@ export function parseOverpassElements(elements, userLat, userLng) {
         id: `hospital-${el.id}`,
         name,
         address: buildHospitalAddress(tags),
-        lat: el.lat,
-        lng: el.lon,
+        lat,
+        lng: lon,
         rating,
         ratingDisplay: rating != null ? `${rating.toFixed(1)}★` : 'Unrated',
         distanceKm: km,
         distance: `${km.toFixed(1)} km away`,
-        mapsHref: `https://www.google.com/maps/dir/?api=1&destination=${el.lat},${el.lon}`,
+        mapsHref: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`,
         isPriority: priority,
       }
     })
+    .filter(Boolean)
     .sort((a, b) => {
       if (a.isPriority !== b.isPriority) {
         return b.isPriority ? 1 : -1
@@ -89,8 +108,12 @@ export function parseOverpassElements(elements, userLat, userLng) {
 export async function fetchHospitalsNearby(lat, lng, radius = 10000) {
   try {
     const query = `[out:json][timeout:25];
-node["amenity"="hospital"](around:${radius}, ${lat}, ${lng});
-out body;`
+(
+  node["amenity"="hospital"](around:${radius},${lat},${lng});
+  way["amenity"="hospital"](around:${radius},${lat},${lng});
+  relation["amenity"="hospital"](around:${radius},${lat},${lng});
+);
+out center;`
 
     const res = await fetch(OVERPASS_URL, {
       method: 'POST',
