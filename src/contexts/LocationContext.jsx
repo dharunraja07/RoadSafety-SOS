@@ -89,6 +89,11 @@ export function LocationProvider({ children }) {
         return
       }
 
+      if (state === 'prompt' || state === 'unknown') {
+        requestGps()
+        return
+      }
+
       if (state === 'denied') {
         setGpsError(true)
         setGpsErrorMessage(getGeolocationErrorMessage({ code: 1 }))
