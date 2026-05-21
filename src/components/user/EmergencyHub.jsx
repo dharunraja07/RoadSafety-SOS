@@ -48,6 +48,7 @@ export default function EmergencyHub() {
 
   const { coords, address, gpsError, gpsErrorMessage, loadingGps, requestGps } = useLocation()
 
+  const [radius, setRadius] = useState(5000)
   const [hospitals, setHospitals] = useState([])
 
   const [loadingHospitals, setLoadingHospitals] = useState(false)
@@ -58,29 +59,16 @@ export default function EmergencyHub() {
 
 
 
-  const fetchNearbyHospitals = useCallback(async (lat, lng) => {
+  const fetchNearbyHospitals = useCallback(async (lat, lng, searchRadius = 5000) => {
 
     setLoadingHospitals(true)
 
     try {
 
-      const query = `[out:json][timeout:25]; node["amenity"="hospital"](around:5000, ${lat}, ${lng}); out body;`
+      const data = await fetchHospitalsNearby(lat, lng, searchRadius)
+      setHospitals(data)
 
-      const res = await fetch('https://overpass-api.de/api/interpreter', {
 
-        method: 'POST',
-
-        headers: { 'Content-Type': 'text/plain' },
-
-        body: query,
-
-      })
-
-      if (!res.ok) throw new Error(`Overpass API responded with ${res.status}`)
-
-      const data = await res.json()
-
-      setHospitals(Array.isArray(data.elements) ? data.elements : [])
 
     } catch {
 
@@ -96,19 +84,26 @@ export default function EmergencyHub() {
 
 
 
+  const handleRadiusChange = (event) => {
+    const nextRadius = Number(event.target.value)
+    setRadius(nextRadius)
+    setHospitals([])
+  }
+
+
   useEffect(() => {
 
     if (coords?.lat == null || coords?.lng == null) {
 
       setHospitals([])
-
+      setLoadingHospitals(false)
       return
 
     }
 
-    fetchNearbyHospitals(coords.lat, coords.lng)
+    fetchNearbyHospitals(coords.lat, coords.lng, radius)
 
-  }, [coords?.lat, coords?.lng, fetchNearbyHospitals])
+  }, [coords?.lat, coords?.lng, radius, fetchNearbyHospitals])
 
 
 
@@ -132,41 +127,7 @@ export default function EmergencyHub() {
 
 
 
-  const traumaCenters = hospitals
-
-    .filter((el) => el.lat != null && el.lon != null)
-
-    .map((el) => {
-
-      const km =
-
-        coords != null
-
-          ? parseFloat(calculateDistance(coords.lat, coords.lng, el.lat, el.lon))
-
-          : Infinity
-
-      return {
-
-        id: el.id,
-
-        name: el.tags?.name || 'Emergency Medical Facility',
-
-        lat: el.lat,
-
-        lon: el.lon,
-
-        km,
-
-        distance: coords != null ? `${km} km` : '—',
-
-      }
-
-    })
-
-    .sort((a, b) => a.km - b.km)
-
-    .slice(0, 5)
+  const traumaCenters = hospitals.slice(0, 5)
 
 
 
@@ -381,85 +342,203 @@ export default function EmergencyHub() {
 
       <div className="mt-6">
 
-        <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-400">
+        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
 
-          Medical / Trauma Centers
+              Medical / Trauma Centers
 
-        </h3>
-
-
-
-        {!coords && !loadingHospitals && (
-
-          <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
-
-            <p className="text-sm leading-relaxed text-slate-300">
-
-              Enable GPS to scan top-rated hospitals within 10 km.
-
+            </h3>
+            <p className="text-sm text-slate-500">
+              Search nearby hospitals within your selected radius.
             </p>
-
           </div>
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Radius</span>
+            <select
+              value={radius}
+              onChange={handleRadiusChange}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none ring-1 ring-slate-700 transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+            >
+              <option value={5000}>Urban Range (5 km)</option>
+              <option value={15000}>Suburban Range (15 km)</option>
+              <option value={30000}>Highway/Rural Range (30 km)</option>
+            </select>
+          </label>
+        </div>
 
-        )}
+        {
+          !coords && !loadingHospitals && (
+
+            <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
+
+              <p className="text-sm leading-relaxed text-slate-300">
+
+                Enable GPS to scan top-rated hospitals within {radius / 1000} km.
+
+              </p>
+
+            </div>
+
+          )
+        }
 
 
 
-        {loadingHospitals && (
+        {
+          loadingHospitals && (
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
 
-            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+              <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">
 
-              Scanning nearby hospitals…
+                Scanning nearby hospitals…
 
-            </p>
+              </p>
 
-            <SkeletonLoader lines={3} pulsing />
+              <SkeletonLoader lines={3} pulsing />
 
-          </div>
+            </div>
 
-        )}
+          )
+        }
 
 
 
-        {coords && !loadingHospitals && traumaCenters.length === 0 && (
+        {
+          coords && !loadingHospitals && traumaCenters.length === 0 && (
 
-          <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
+            <div className="rounded-xl border border-warning-amber/30 bg-warning-amber/5 p-4">
 
-            <p className="text-sm leading-relaxed text-slate-300">
+              <p className="text-sm leading-relaxed text-slate-300">
 
-              No hospitals found within 10 km. Use emergency helplines below or check Crisis POI
+                No hospitals found within {radius / 1000} km. Call ambulance dispatch on 108 now, or use one of the emergency lines below.
 
-              tabs.
+              </p>
 
-            </p>
+              <div className="mt-4 space-y-2">
 
-            <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3">
 
-              {EMERGENCY_HELPLINES.slice(0, 2).map((line) => (
-
-                <div
-
-                  key={line.id}
-
-                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3"
-
-                >
-
-                  <p className="font-semibold text-white">{line.name}</p>
+                  <p className="font-semibold text-white">Ambulance Dispatch</p>
 
                   <a
 
-                    href={line.telHref}
+                    href="tel:108"
 
                     className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white"
 
                   >
 
-                    {line.phone}
+                    108
 
                   </a>
+
+                </div>
+
+                {EMERGENCY_HELPLINES.filter((line) => line.id !== 'helpline-108').slice(0, 2).map((line) => (
+
+                  <div
+
+                    key={line.id}
+
+                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/80 px-4 py-3"
+
+                  >
+
+                    <p className="font-semibold text-white">{line.name}</p>
+
+                    <a
+
+                      href={line.telHref}
+
+                      className="rounded-full bg-traffic-red px-4 py-2 text-sm font-bold text-white"
+
+                    >
+
+                      {line.phone}
+
+                    </a>
+
+                  </div>
+
+                ))}
+
+              </div>
+
+            </div>
+
+          )
+        }
+
+
+
+        {
+          coords && !loadingHospitals && (
+
+            <div className="space-y-3">
+
+              {traumaCenters.map((hospital) => (
+
+                <div
+
+                  key={hospital.id}
+
+                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition hover:border-slate-700"
+
+                >
+
+                  <div className="flex items-start justify-between gap-3">
+
+                    <div className="min-w-0 flex-1">
+
+                      <div className="flex flex-wrap items-center gap-2">
+
+                        <h4 className="font-bold text-white">{hospital.name}</h4>
+
+                        {hospital.isPriority && (
+                          <span className="rounded-full bg-traffic-red/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-traffic-red">
+                            ⭐ Critical/Speciality Facility
+                          </span>
+                        )}
+
+                        <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300">
+
+                          {hospital.ratingDisplay}
+
+                        </span>
+
+                      </div>
+
+                      <p className="mt-2 text-sm">
+
+                        <span className="font-mono text-warning-amber">{hospital.distance}</span>
+
+                        <span className="text-slate-500"> away</span>
+
+                      </p>
+
+                    </div>
+
+                    <a
+
+                      href={`https://www.google.com/maps/search/?api=1&query=${hospital.lat},${hospital.lng}`}
+
+                      target="_blank"
+
+                      rel="noopener noreferrer"
+
+                      className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-emerald-500"
+
+                    >
+
+                      <Navigation className="h-4 w-4" />
+
+                      Navigate
+
+                    </a>
+
+                  </div>
 
                 </div>
 
@@ -467,81 +546,10 @@ export default function EmergencyHub() {
 
             </div>
 
-          </div>
+          )
+        }
 
-        )}
-
-
-
-        {coords && !loadingHospitals && (
-
-          <div className="space-y-3">
-
-            {traumaCenters.map((hospital) => (
-
-              <div
-
-                key={hospital.id}
-
-                className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition hover:border-slate-700"
-
-              >
-
-                <div className="flex items-start justify-between gap-3">
-
-                  <div className="min-w-0 flex-1">
-
-                    <div className="flex flex-wrap items-center gap-2">
-
-                      <h4 className="font-bold text-white">{hospital.name}</h4>
-
-                      <span className="rounded-full bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-300">
-
-                        {hospital.ratingDisplay}
-
-                      </span>
-
-                    </div>
-
-                    <p className="mt-2 text-sm">
-
-                      <span className="font-mono text-warning-amber">{hospital.distance}</span>
-
-                      <span className="text-slate-500"> away</span>
-
-                    </p>
-
-                  </div>
-
-                  <a
-
-                    href={`https://www.google.com/maps/search/?api=1&query=${hospital.lat},${hospital.lng}`}
-
-                    target="_blank"
-
-                    rel="noopener noreferrer"
-
-                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white shadow-lg transition hover:bg-emerald-500"
-
-                  >
-
-                    <Navigation className="h-4 w-4" />
-
-                    Navigate
-
-                  </a>
-
-                </div>
-
-              </div>
-
-            ))}
-
-          </div>
-
-        )}
-
-      </div>
+      </div >
 
 
 
@@ -567,7 +575,7 @@ export default function EmergencyHub() {
 
       />
 
-    </div>
+    </div >
 
   )
 
