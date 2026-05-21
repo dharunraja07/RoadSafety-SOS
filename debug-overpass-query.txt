@@ -1,0 +1,1 @@
+[out:json][timeout:25];(node["amenity"="hospital"](around:5000,11.0168,76.9558);way["amenity"="hospital"](around:5000,11.0168,76.9558);relation["amenity"="hospital"](around:5000,11.0168,76.9558););out center;
