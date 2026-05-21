@@ -1,6 +1,10 @@
 import { haversineKm } from './geo'
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+const OVERPASS_URLS = [
+  'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+]
 
 export const EMERGENCY_HELPLINES = [
   { id: 'helpline-911', name: 'United States Emergency', phone: '911', telHref: 'tel:911' },
@@ -105,6 +109,31 @@ export function parseOverpassElements(elements, userLat, userLng) {
     })
 }
 
+async function executeOverpassQuery(query) {
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          Accept: 'application/json',
+        },
+        body: query,
+      })
+
+      if (!res.ok) {
+        continue
+      }
+
+      return await res.json()
+    } catch {
+      continue
+    }
+  }
+
+  throw new Error('All Overpass mirrors failed')
+}
+
 export async function fetchHospitalsNearby(lat, lng, radius = 10000) {
   try {
     const query = `[out:json][timeout:25];
@@ -115,17 +144,7 @@ export async function fetchHospitalsNearby(lat, lng, radius = 10000) {
 );
 out center;`
 
-    const res = await fetch(OVERPASS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: query,
-    })
-
-    if (!res.ok) {
-      throw new Error(`Overpass API responded with ${res.status}`)
-    }
-
-    const data = await res.json()
+    const data = await executeOverpassQuery(query)
     return parseOverpassElements(data.elements, lat, lng)
   } catch {
     return []
